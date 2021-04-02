@@ -2,6 +2,7 @@ import requests
 import sys
 import re
 import argparse
+from tqdm import tqdm
 parser = argparse.ArgumentParser()
 
 
@@ -17,6 +18,7 @@ parser.add_argument("-Q","--queries",action="append",help="queries")
 parser.add_argument("-D","--data",action="append",help="data")
 parser.add_argument("--json",action="append",help="json")
 parser.add_argument("--file",help="file")
+parser.add_argument("--timeout",help="timeout")
 args = parser.parse_args()
 #url validation
 if(urlregex.match(args.url)==None):
@@ -70,4 +72,72 @@ if(args.json!=None):
         headers["content-type"]="application/json"
 #----
 #parse file
-print(args.file)
+myfile=None
+if(args.file!=None):
+    try:
+        myfile =open(args.file, "rb")
+        body=myfile.read()
+        if("content-type" not in headers.keys()):
+            headers["content-type"]="application/octet-stream"
+    except FileNotFoundError:
+        print("file not found\n")
+        exit(0)
+#----
+#parse timeout
+timeout=100000
+if(args.timeout!=None):
+    timeout=float(args.timeout)
+#----
+
+try:
+    if(args.method=="GET"):
+        response=requests.get(args.url,headers=headers,params=queries,data=body,timeout=timeout,stream=True)
+    elif args.method=="POST":
+        response=requests.post(args.url,headers=headers,params=queries,data=body,timeout=timeout,stream=True)
+    elif args.method=="PATCH":
+        response=requests.patch(args.url,headers=headers,params=queries,data=body,timeout=timeout,stream=True)
+    elif args.method=="PUT":
+        response=requests.put(args.url,headers=headers,params=queries,data=body,timeout=timeout,stream=True)
+    elif args.method=="DELETE":
+        response=requests.delete(args.url,headers=headers,params=queries,data=body,timeout=timeout,stream=True)
+    else:
+        pass
+    content_types=['application/pdf','application/octet-stream','image/jpeg','video/mp4','image/png','application/zip']
+    print("version : HTTP/",response.raw.version)
+    print("---------------------")
+    print("status code : ",response.status_code)
+    print("---------------------")
+    print("method : ",args.method)
+    print("---------------------")
+    print("status massage : ",response.reason)
+    print("---------------------")
+    print("headers:\n")
+    for header in response.headers:
+        print(header,":",response.headers[header])
+    print("---------------------")
+    if(response.headers['content-type'] not in content_types):
+        print("body: ")
+        print(response.text)
+    else:
+        temp=response.url.split('/')
+        filename=temp[-1]
+        print(filename)
+        total_size_in_bytes= int(response.headers.get('content-length', 0))
+        block_size = 1024 #1 Kibibyte
+        progress_bar = tqdm(total=total_size_in_bytes, unit='iB', unit_scale=True)
+        with open(filename, 'wb') as file:
+            for data in response.iter_content(block_size):
+                progress_bar.update(len(data))
+                file.write(data)
+            progress_bar.close()
+            if total_size_in_bytes != 0 and progress_bar.n != total_size_in_bytes:
+                print("ERROR, something went wrong")
+
+except requests.exceptions.ConnectTimeout:
+    print("Connection timeout!")
+except requests.exceptions.ReadTimeout:
+    print("Connection timeout!")
+except requests.exceptions.ConnectionError:
+    print("Too many requests!")
+except:
+    print("error occured")
